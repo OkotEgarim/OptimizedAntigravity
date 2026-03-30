@@ -1,8 +1,12 @@
 # read_files.py
+import os
 import argparse
 from datetime import datetime
+from src import gitignore, exclusions, file_io
 
-def compile_files(input_file):
+def process_files(input_file, use_gitignore):
+    """Core logic to read a specific list of files and output them in XML format."""
+    base_dir = os.getcwd()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = f"out_read_{timestamp}.txt"
 
@@ -12,6 +16,8 @@ def compile_files(input_file):
     except FileNotFoundError:
         print(f"Error: The input list file '{input_file}' does not exist.")
         return
+
+    ignore_patterns = gitignore.parse_patterns(base_dir) if use_gitignore else []
 
     with open(output_file, 'w', encoding='utf-8') as f_out:
         f_out.write("<selected_files>\n\n")
@@ -23,26 +29,23 @@ def compile_files(input_file):
                 continue
 
             f_out.write(f'<file path="{file_path}">\n')
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f_in:
-                    content = f_in.read()
-                    # Ensure the file ends with a newline
-                    if not content.endswith('\n') and content:
-                        content += '\n'
-                    f_out.write(content if content else "[Empty file]\n")
-            except FileNotFoundError:
-                f_out.write(f"[ERROR: The file {file_path} is missing]\n")
-            except UnicodeDecodeError:
-                f_out.write("[ERROR: Binary file or unsupported encoding ignored]\n")
-            except Exception as e:
-                f_out.write(f"[ERROR during reading: {e}]\n")
+
+            if use_gitignore and exclusions.is_ignored(file_path, base_dir, [], ignore_patterns, output_file):
+                f_out.write("[ERROR: This file is excluded by .gitignore rules]\n</file>\n\n")
+                continue
+
+            content = file_io.read_file(file_path)
+            f_out.write(content)
+
             f_out.write("</file>\n\n")
 
         f_out.write("</selected_files>\n")
 
     print(f"✅ Done! The selected files have been compiled into: {output_file}")
 
-if __name__ == "__main__":
+
+def main():
+    """CLI entry point for argument parsing."""
     parser = argparse.ArgumentParser(description="Compile selected files into an AI-readable XML format.")
     parser.add_argument(
         "input_file", 
@@ -50,6 +53,14 @@ if __name__ == "__main__":
         default="list.txt", 
         help="Text file containing the list of paths to read (default: list.txt)"
     )
-
+    parser.add_argument(
+        "--exclude-gitignore", 
+        action="store_true", 
+        help="Ignore files that match patterns in the local .gitignore file"
+    )
     args = parser.parse_args()
-    compile_files(args.input_file)
+
+    process_files(args.input_file, args.exclude_gitignore)
+
+if __name__ == "__main__":
+    main()
